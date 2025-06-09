@@ -1,5 +1,5 @@
 En el primer cmd:
-python tinyllama_intelligent.py
+python run_server.py
 
 En el segundo cmd:
 python tinyllama_intelligent.py
