@@ -6,11 +6,11 @@ router = APIRouter()
 
 # Datos de ejemplo para la base de datos en memoria
 autores_db = [
-    {"id": 1, "nombre": "Gabriel García Márquez", "nacionalidad": "Colombiano"},
-    {"id": 2, "nombre": "Isabel Allende", "nacionalidad": "Chilena"},
-    {"id": 3, "nombre": "Mario Vargas Llosa", "nacionalidad": "Peruano"},
-    {"id": 4, "nombre": "Jorge Luis Borges", "nacionalidad": "Argentino"},
-    {"id": 5, "nombre": "Pablo Neruda", "nacionalidad": "Chileno"}
+    {"id": 1, "nombre": "Gabriel García Márquez", "nacionalidad": "Colombia"},
+    {"id": 2, "nombre": "Isabel Allende", "nacionalidad": "Chile"},
+    {"id": 3, "nombre": "Mario Vargas Llosa", "nacionalidad": "Peru"},
+    {"id": 4, "nombre": "Jorge Luis Borges", "nacionalidad": "Argentina"},
+    {"id": 5, "nombre": "Pablo Neruda", "nacionalidad": "Chile"}
 ]
 
 @router.get("/", response_model=List[dict], summary="Obtener todos los autores")
