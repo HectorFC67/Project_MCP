@@ -25,7 +25,14 @@ except ImportError:
     LLAMA_CPP_AVAILABLE = False
     print("⚠️  llama‑cpp‑python no está instalado. Se usará modo heurístico.")
 
-MCP_BASE_URL = os.getenv("MCP_BIBLIOTECA", "http://127.0.0.1:8100")
+MCP_ENDPOINTS = [
+    os.getenv("MCP_BIBLIOTECA", "http://127.0.0.1:8100"),
+    os.getenv("MCP_COMPRAS", "http://127.0.0.1:8200"),
+]
+
+MCP_BIBLIOTECA = os.getenv("MCP_BIBLIOTECA", "http://127.0.0.1:8100")
+MCP_COMPRAS = os.getenv("MCP_COMPRAS", "http://127.0.0.1:8200")
+
 MAX_CHUNK_CHARS = 2_000
 
 # -------------------------------------------------------------
@@ -93,6 +100,13 @@ def _prettify_chunk(text: str) -> str:
         pretty += '.'
     return pretty
 
+def _detect_domain(question: str) -> str:
+        q_lower = question.lower()
+        if any(palabra in q_lower for palabra in ["cliente", "clientes", "compra", "compras", "producto", "productos", "stock", "precio", "país"]):
+            return "compras"
+        if any(palabra in q_lower for palabra in ["libro", "libros", "autor", "autores", "editorial", "nacionalidad", "publicación"]):
+            return "biblioteca"
+        return "desconocido"
 # -------------------------------------------------------------
 # Host principal (sin cambios en la lógica)
 # -------------------------------------------------------------
@@ -109,16 +123,27 @@ class IntelligentTinyLlama:
 
     @staticmethod
     def _call_mcp(question: str) -> List[str]:
+        domain = _detect_domain(question)
+        base_url = {
+            "biblioteca": MCP_BIBLIOTECA,
+            "compras": MCP_COMPRAS
+        }.get(domain)
+
+        if not base_url:
+            print("⚠️  No se pudo determinar el dominio de la pregunta.")
+            return []
+
         try:
-            r = requests.post(f"{MCP_BASE_URL}/provision", json={"query": question}, timeout=10)
+            r = requests.post(f"{base_url}/provision", json={"query": question}, timeout=10)
             r.raise_for_status()
             return [c.get("text", "") for c in r.json().get("chunks", [])]
         except Exception as exc:
-            print("⚠️  Error llamando a MCP:", exc)
+            print(f"⚠️  Error llamando al MCP ({domain}) en {base_url}:", exc)
             return []
 
     def answer_question(self, question: str) -> str:
         chunks = self._call_mcp(question)
+        print(f"🌐 Dominio detectado: {_detect_domain(question)}")
         context_text = "\n".join(shorten(c, MAX_CHUNK_CHARS) for c in chunks)
 
         if self.model:
@@ -146,16 +171,17 @@ class IntelligentTinyLlama:
 # -------------------------------------------------------------
 
 def main():
-    print("🧠 TinyLlama + MCP |", MCP_BASE_URL)
+    print("🧠 TinyLlama + MCP múltiple")
     print("=" * 60)
 
-    try:
-        r = requests.get(f"{MCP_BASE_URL}/manifest", timeout=5)
-        r.raise_for_status()
-        print("✅ MCP‑Server conectado →", r.json().get("name"))
-    except Exception as exc:
-        print("❌ No se pudo acceder al MCP‑Server:", exc)
-        return
+    for base_url in MCP_ENDPOINTS:
+        try:
+            r = requests.get(f"{base_url}/manifest", timeout=5)
+            r.raise_for_status()
+            name = r.json().get("name", "¿?")
+            print(f"✅ MCP‑Server conectado en {base_url} → {name}")
+        except Exception as exc:
+            print(f"❌ No se pudo acceder al MCP en {base_url}:", exc)
 
     model_path = "./TinyLlama-1.1B-Chat-v1.0-GGUF/tinyllama-1.1b-chat-v1.0.Q8_0.gguf"
     bot = IntelligentTinyLlama(model_path if os.path.exists(model_path) else None)
