@@ -14,7 +14,7 @@ Arranque:
 import os
 import re
 import random
-from typing import List, Literal, Optional
+from typing import List, Literal, Optional, Dict
 
 import httpx
 from fastapi import FastAPI, HTTPException
@@ -49,12 +49,18 @@ class ProvisionResponse(BaseModel):
     provenance: str = SERVICE_NAME
 
 # -----------------------------------------------------------------------------
-# Utilidades
+# Auxiliares
 # -----------------------------------------------------------------------------
-async def fetch_json(client: httpx.AsyncClient, path: str):
-    r = await client.get(path)
+async def fetch_json(cli: httpx.AsyncClient, path: str):
+    r = await cli.get(path)
     r.raise_for_status()
     return r.json()
+
+async def all_authors(cli: httpx.AsyncClient):
+    return await fetch_json(cli, "/autores/")
+
+async def all_books(cli: httpx.AsyncClient):
+    return await fetch_json(cli, "/libros/")
 
 # -----------------------------------------------------------------------------
 # Núcleo de obtención de contexto
@@ -89,7 +95,7 @@ async def gather_context(query: str) -> List[Chunk]:
             return chunks
 
         # 3. Año
-        year = re.search(r"\b(19\d{2}|20\d{2})\b", q)
+        year = re.search(r"en \b(19\d{2}|20\d{2})\b", q)
         if year:
             y = year.group(1)
             libros = await fetch_json(cli, f"/libros/buscar/por-anio/{y}")
@@ -100,7 +106,7 @@ async def gather_context(query: str) -> List[Chunk]:
             if key in q:
                 autores = await fetch_json(cli, f"/autores/buscar/por-nacionalidad/{canon}")
                 chunks.append(Chunk(
-                    text=f"Autores {canon.lower()}: {autores}",
+                    text=f"Autores de {canon.lower()}: {autores}",
                     source=f"{API_BASE}/autores/buscar/por-nacionalidad/{canon}"
                 ))
                 break
@@ -112,7 +118,73 @@ async def gather_context(query: str) -> List[Chunk]:
             libros = await fetch_json(cli, f"/libros/buscar/titulo/{term}")
             chunks.append(Chunk(text=f"Libros con '{term}': {libros}", source=f"{API_BASE}/libros/buscar/titulo/{term}"))
 
-        # 6. Fallback stats si aún no hay chunks
+        # 6. Top N autores con más libros  («top 2 autores»)
+        m = re.search(r"top\s*(\d+)\s*autores", q)
+        if m:
+            n = int(m.group(1))
+            autores = await all_authors(cli)
+            libros = await all_books(cli)
+            count_by_id: Dict[int, int] = {}
+            for lib in libros:
+                count_by_id[lib["autor_id"]] = count_by_id.get(lib["autor_id"], 0) + 1
+            ranking = sorted(autores, key=lambda a: count_by_id.get(a["id"], 0), reverse=True)
+            top_n = ranking[:n]
+            resumen = [f"{a['nombre']} ({count_by_id.get(a['id'],0)} libros)" for a in top_n]
+            chunks.append(Chunk(
+                text="Top autores por número de libros: " + ", ".join(resumen),
+                source=f"{API_BASE}/libros/ & /autores/"
+            ))
+            return chunks
+
+        # 7. Rango de años
+        m = re.search(r"entre\s*(\d{4})\s*y\s*(\d{4})", q)
+        if m:
+            y1, y2 = sorted(map(int, m.groups()))
+            libros = await all_books(cli)
+            filtrados = [l for l in libros if y1 <= l["anio_publicacion"] <= y2]
+            chunks.append(Chunk(
+                text=f"Libros entre {y1}-{y2}: {filtrados}",
+                source=f"{API_BASE}/libros/ (rango {y1}-{y2})"
+            ))
+            return chunks
+
+        # 8. Libro más reciente / antiguo
+        if "más reciente" in q or "mas reciente" in q:
+            libros = await all_books(cli)
+            latest = max(libros, key=lambda l: l["anio_publicacion"])
+            chunks.append(Chunk(
+                text=f"Libro más reciente: {latest['titulo']} ({latest['anio_publicacion']})",
+                source=f"{API_BASE}/libros/"
+            ))
+            return chunks
+        if "más antiguo" in q or "mas antiguo" in q:
+            libros = await all_books(cli)
+            oldest = min(libros, key=lambda l: l["anio_publicacion"])
+            chunks.append(Chunk(
+                text=f"Libro más antiguo: {oldest['titulo']} ({oldest['anio_publicacion']})",
+                source=f"{API_BASE}/libros/"
+            ))
+            return chunks
+
+        # 9. Top N autores con más libros  («top 2 autores»)
+        m = re.search(r"top\s*(\d+)\s*autores", q)
+        if m:
+            n = int(m.group(1))
+            autores = await all_authors(cli)
+            libros = await all_books(cli)
+            count_by_id: Dict[int, int] = {}
+            for lib in libros:
+                count_by_id[lib["autor_id"]] = count_by_id.get(lib["autor_id"], 0) + 1
+            ranking = sorted(autores, key=lambda a: count_by_id.get(a["id"], 0), reverse=True)
+            top_n = ranking[:n]
+            resumen = [f"{a['nombre']} ({count_by_id.get(a['id'],0)} libros)" for a in top_n]
+            chunks.append(Chunk(
+                text="Top autores por número de libros: " + ", ".join(resumen),
+                source=f"{API_BASE}/libros/ & /autores/"
+            ))
+            return chunks
+
+        # 10. Fallback stats si aún no hay chunks
         if not chunks:
             stats = await fetch_json(cli, "/stats")
             chunks.append(Chunk(text=f"Estadísticas biblioteca: {stats}", source=f"{API_BASE}/stats"))

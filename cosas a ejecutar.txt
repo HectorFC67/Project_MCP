@@ -2,4 +2,7 @@ En el primer cmd:
 python run_server.py
 
 En el segundo cmd:
+uvicorn mcp_biblioteca:app --port 8100 --reload
+
+En el ultimo cmd:
 python tinyllama_intelligent.py
