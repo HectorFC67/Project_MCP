@@ -1,8 +1,11 @@
 En el primer cmd:
 python run_server.py
 
-En el segundo cmd:
+En el segundo cmd (API):
 uvicorn mcp_biblioteca:app --port 8100 --reload
+
+En el tercer cmd (BBDD):
+uvicorn mcp_compras:app --port 8200 --reload
 
 En el ultimo cmd:
 python tinyllama_intelligent.py
