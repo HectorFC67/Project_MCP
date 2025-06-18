@@ -1,206 +1,89 @@
 #!/usr/bin/env python3
 """
-TinyLlama + MCP v0.4.1
-=====================
-• Mejora `_prettify_chunk` para manejar cadenas que contienen **listas de dicts
-  representadas con comillas simples** (el caso que aparecía como:
-  `Autores de chile: [{'id': 2, 'nombre': 'Isabel…'}, …]`).
-• Si detecta ese patrón, convierte con `ast.literal_eval` y redacta frase
-  amigable.
+CLI para TinyLlama + LangChain + MCP
 """
 
 import os
-import json
-import re
-import ast
-from textwrap import shorten
-from typing import List, Optional
-
+from typing import List
 import requests
 
-try:
-    from llama_cpp import Llama  # type: ignore
-    LLAMA_CPP_AVAILABLE = True
-except ImportError:
-    LLAMA_CPP_AVAILABLE = False
-    print("⚠️  llama‑cpp‑python no está instalado. Se usará modo heurístico.")
+from langchain.agents import initialize_agent, Tool
+from langchain.agents.agent_types import AgentType
+from langchain.memory import ConversationBufferMemory
+
+from tinyllama_langchain import TinyLlamaLLM
+from langchain_tools import biblioteca_tool, compras_tool
 
 MCP_ENDPOINTS = [
     os.getenv("MCP_BIBLIOTECA", "http://127.0.0.1:8100"),
     os.getenv("MCP_COMPRAS", "http://127.0.0.1:8200"),
 ]
 
-MCP_BIBLIOTECA = os.getenv("MCP_BIBLIOTECA", "http://127.0.0.1:8100")
-MCP_COMPRAS = os.getenv("MCP_COMPRAS", "http://127.0.0.1:8200")
 
-MAX_CHUNK_CHARS = 2_000
-
-# -------------------------------------------------------------
-# Utilidades de formato «natural» cuando no hay modelo
-# -------------------------------------------------------------
-
-def _format_list_of_dicts(lst: List[dict]) -> str:
-    if not lst:
-        return "(sin resultados)"
-    if "titulo" in lst[0]:
-        titulos = ", ".join(d.get("titulo", "¿?") for d in lst[:5])
-        extra = "…" if len(lst) > 5 else ""
-        return f"Se encontraron {len(lst)} libro(s): {titulos}{extra}."
-    if "nombre" in lst[0]:
-        nombres = ", ".join(d.get("nombre", "¿?") for d in lst[:5])
-        extra = "…" if len(lst) > 5 else ""
-        return f"Autores: {nombres}{extra}."
-    return ", ".join(str(d) for d in lst)
-
-
-def _prettify_chunk(text: str) -> str:
-    """Convierte la mayoría de textos devueltos por MCP en frases legibles."""
-    # 1) ¿Es JSON válido?
-    try:
-        data = json.loads(text)
-        if isinstance(data, list):
-            return _format_list_of_dicts(data)
-        if isinstance(data, dict):
-            if {"total_autores", "total_libros"}.issubset(data.keys()):
-                return (
-                    f"La biblioteca cuenta con {data['total_autores']} autores y "
-                    f"{data['total_libros']} libros (publicados entre "
-                    f"{data['rango_años_publicacion']['año_mas_antiguo']} y "
-                    f"{data['rango_años_publicacion']['año_mas_reciente']})."
-                )
-            if "nombre" in data:
-                return f"Autor: {data['nombre']} ({data.get('nacionalidad','?')})."
-            if "titulo" in data:
-                return f"Libro: “{data['titulo']}” ({data.get('anio_publicacion','?')})."
-    except Exception:
-        pass
-
-    # 2) Detecta patrón "Texto: [ { … } , … ]" con comillas simples
-    m = re.search(r":\s*(\[\{.*\}\])", text)
-    if m:
-        try:
-            py_obj = ast.literal_eval(m.group(1))  # convierte a lista de dicts
-            return _format_list_of_dicts(py_obj)
-        except Exception:
-            pass
-
-    # 3) Detecta lista de dicts sin prefijo
-    if text.strip().startswith("[") and text.strip().endswith("]"):
-        try:
-            py_obj = ast.literal_eval(text)
-            if isinstance(py_obj, list):
-                return _format_list_of_dicts(py_obj)
-        except Exception:
-            pass
-
-    # 4) Limpieza ligera de listas de strings entre comillas
-    text = re.sub(r"\['([^']+)'(?:, '([^']+)')*\]", lambda m: m.group(0).replace("[","").replace("]","").replace("'",""), text)
-    pretty = text.strip()
-    if pretty and not pretty.endswith(('.', '…', '"')):
-        pretty += '.'
-    return pretty
-
-def _detect_domain(question: str) -> str:
-        q_lower = question.lower()
-        if any(palabra in q_lower for palabra in ["cliente", "clientes", "compra", "compras", "producto", "productos", "stock", "precio", "país"]):
-            return "compras"
-        if any(palabra in q_lower for palabra in ["libro", "libros", "autor", "autores", "editorial", "nacionalidad", "publicación"]):
-            return "biblioteca"
-        return "desconocido"
-# -------------------------------------------------------------
-# Host principal (sin cambios en la lógica)
-# -------------------------------------------------------------
 class IntelligentTinyLlama:
-    def __init__(self, model_path: Optional[str] = None):
-        self.model = None
-        if LLAMA_CPP_AVAILABLE and model_path:
-            try:
-                print("🦙 Cargando TinyLlama …")
-                self.model = Llama(model_path=model_path, n_ctx=4096, n_threads=4, verbose=False)
-                print("✅ TinyLlama cargado")
-            except Exception as exc:
-                print(f"❌ No se pudo cargar el modelo: {exc}")
+    def __init__(self, model_path: str):
+        print("🦙 Iniciando TinyLlama LLM y agente LangChain...")
+        self.llm = TinyLlamaLLM(model_path=model_path)
 
-    @staticmethod
-    def _call_mcp(question: str) -> List[str]:
-        domain = _detect_domain(question)
-        base_url = {
-            "biblioteca": MCP_BIBLIOTECA,
-            "compras": MCP_COMPRAS
-        }.get(domain)
+        tools = [
+            Tool(name="BibliotecaTool", func=biblioteca_tool, description="Consulta sobre libros, autores y publicaciones."),
+            Tool(name="ComprasTool", func=compras_tool, description="Consulta sobre productos, stock, clientes y compras."),
+        ]
 
-        if not base_url:
-            print("⚠️  No se pudo determinar el dominio de la pregunta.")
-            return []
+        memory = ConversationBufferMemory(memory_key="chat_history", return_messages=True)
 
-        try:
-            r = requests.post(f"{base_url}/provision", json={"query": question}, timeout=10)
-            r.raise_for_status()
-            return [c.get("text", "") for c in r.json().get("chunks", [])]
-        except Exception as exc:
-            print(f"⚠️  Error llamando al MCP ({domain}) en {base_url}:", exc)
-            return []
+        self.agent = initialize_agent(
+            tools=tools,
+            llm=self.llm,
+            agent=AgentType.ZERO_SHOT_REACT_DESCRIPTION,
+            memory=memory,
+            verbose=True,
+        )
 
     def answer_question(self, question: str) -> str:
-        chunks = self._call_mcp(question)
-        print(f"🌐 Dominio detectado: {_detect_domain(question)}")
-        context_text = "\n".join(shorten(c, MAX_CHUNK_CHARS) for c in chunks)
+        return self.agent.run(question)
 
-        if self.model:
-            prompt = (
-                "### Contexto:\n" + context_text +
-                "\n\n### Pregunta:\n" + question +
-                "\n\n### Responde en español natural, claro y conciso:\n"
-            )
-            out = self.model(prompt, max_tokens=320, temperature=0.6, stop=["###"])
-            return out["choices"][0]["text"].strip()
 
-        if not chunks:
-            return "Lo siento, no encontré información para tu pregunta."
-
-        if len(chunks) == 1:
-            return _prettify_chunk(chunks[0])
-
-        partes = ["Aquí tienes la información relevante:"]
-        for idx, ch in enumerate(chunks, 1):
-            partes.append(f"{idx}. {_prettify_chunk(ch)}")
-        return "\n".join(partes)
-
-# -------------------------------------------------------------
-# CLI (igual que antes)
-# -------------------------------------------------------------
-
-def main():
-    print("🧠 TinyLlama + MCP múltiple")
+def check_mcp_connections():
+    print("=" * 60)
+    print("🔌 Verificando conexión con los MCP...")
+    for url in MCP_ENDPOINTS:
+        try:
+            r = requests.get(f"{url}/manifest", timeout=3)
+            name = r.json().get("name", "¿?")
+            print(f"✅ MCP activo en {url} → {name}")
+        except Exception as e:
+            print(f"❌ No se pudo conectar a {url} → {e}")
     print("=" * 60)
 
-    for base_url in MCP_ENDPOINTS:
-        try:
-            r = requests.get(f"{base_url}/manifest", timeout=5)
-            r.raise_for_status()
-            name = r.json().get("name", "¿?")
-            print(f"✅ MCP‑Server conectado en {base_url} → {name}")
-        except Exception as exc:
-            print(f"❌ No se pudo acceder al MCP en {base_url}:", exc)
+
+def main():
+    check_mcp_connections()
 
     model_path = "./TinyLlama-1.1B-Chat-v1.0-GGUF/tinyllama-1.1b-chat-v1.0.Q8_0.gguf"
-    bot = IntelligentTinyLlama(model_path if os.path.exists(model_path) else None)
+    if not os.path.exists(model_path):
+        print(f"❌ No se encontró el modelo en {model_path}")
+        return
 
-    print("\nEscribe 'salir' para terminar.\n")
+    bot = IntelligentTinyLlama(model_path=model_path)
+
+    print("\n🧠 TinyLlama + LangChain + MCP CLI")
+    print("Escribe 'salir' para terminar.\n")
+
     while True:
         try:
-            q = input("👤 Pregunta: ").strip()
-            if q.lower() in {"salir", "exit", "quit"}:
+            pregunta = input("👤 Pregunta: ").strip()
+            if pregunta.lower() in {"salir", "exit", "quit"}:
                 break
-            if q:
-                print("🤔 Buscando …")
-                ans = bot.answer_question(q)
-                print("\n📖 " + ans + "\n")
+            if pregunta:
+                print("🤔 Procesando...")
+                respuesta = bot.answer_question(pregunta)
+                print("\n📖", respuesta)
                 print("-" * 60)
         except KeyboardInterrupt:
             break
         except Exception as exc:
-            print("❌ Error inesperado:", exc)
+            print("❌ Error:", exc)
 
     print("\n👋 Hasta luego")
 

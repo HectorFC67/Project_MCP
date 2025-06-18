@@ -1,10 +1,10 @@
 En el primer cmd:
 python run_server.py
 
-En el segundo cmd (API):
+En el tercer cmd (API):
 uvicorn mcp_biblioteca:app --port 8100 --reload
 
-En el tercer cmd (BBDD):
+En el cuarto cmd (BBDD):
 uvicorn mcp_compras:app --port 8200 --reload
 
 En el ultimo cmd:
