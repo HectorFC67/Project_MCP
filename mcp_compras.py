@@ -110,7 +110,7 @@ async def gather_context(query: str) -> List[Chunk]:
         return chunks
 
     # 6. Cliente más activo (más compras)
-    if "cliente más activo" in q or "cliente que más compró" in q:
+    if "cliente más activo" in q or "cliente que más ha comprado" in q:
         rows = query_db("""
             SELECT c.Nombre || ' ' || c.Apellidos as nombre, COUNT(*) as total
             FROM Compra co
