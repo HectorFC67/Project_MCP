@@ -41,7 +41,51 @@ class IntelligentTinyLlama:
         )
 
     def answer_question(self, question: str) -> str:
-        return self.agent.run(question)
+        temas_biblioteca = ["libro", "libros", "autor", "autores", "biblioteca", "publicación", "editorial"]
+        temas_compras = ["producto", "productos", "compra", "compras", "precio", "cliente", "clientes", "stock"]
+
+        usa_biblioteca = any(palabra in question.lower() for palabra in temas_biblioteca)
+        usa_compras = any(palabra in question.lower() for palabra in temas_compras)
+
+        if usa_biblioteca and not usa_compras:
+            tools = [
+                Tool(name="BibliotecaTool", func=biblioteca_tool, description="Consulta sobre libros, autores y publicaciones.")
+            ]
+            razon = "La pregunta contiene palabras clave relacionadas con biblioteca/autores/libros."
+            herramienta = "BibliotecaTool"
+
+        elif usa_compras and not usa_biblioteca:
+            tools = [
+                Tool(name="ComprasTool", func=compras_tool, description="Consulta sobre productos, stock, clientes y compras.")
+            ]
+            razon = "La pregunta contiene palabras clave relacionadas con productos/clientes/compras."
+            herramienta = "ComprasTool"
+
+        elif not usa_biblioteca and not usa_compras:
+            return "📖 No he sido capaz de encontrar información relacionada con la pregunta enviada."
+
+        else:
+            tools = [
+                Tool(name="BibliotecaTool", func=biblioteca_tool, description="Consulta sobre libros, autores y publicaciones."),
+                Tool(name="ComprasTool", func=compras_tool, description="Consulta sobre productos, stock, clientes y compras."),
+            ]
+            razon = "La pregunta contiene palabras clave de ambos temas: biblioteca y compras."
+            herramienta = "BibliotecaTool y ComprasTool"
+
+        memory = ConversationBufferMemory(memory_key="chat_history", return_messages=True)
+
+        agent = initialize_agent(
+            tools=tools,
+            llm=self.llm,
+            agent=AgentType.ZERO_SHOT_REACT_DESCRIPTION,
+            memory=memory,
+            verbose=True,
+        )
+
+        respuesta = agent.run(question)
+
+        # Devuelve info de la herramienta usada + respuesta real
+        return f"\n[🌐 Herramienta usada: {herramienta}]\n[Razón: {razon}]\n\n📖 Respuesta:\n{respuesta}"
 
 
 def check_mcp_connections():
@@ -78,7 +122,7 @@ def main():
             if pregunta:
                 print("🤔 Procesando...")
                 respuesta = bot.answer_question(pregunta)
-                print("\n📖", respuesta)
+                print(respuesta)
                 print("-" * 60)
         except KeyboardInterrupt:
             break
