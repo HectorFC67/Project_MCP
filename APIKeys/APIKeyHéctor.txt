@@ -1,0 +1,3 @@
+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
+
+cd "C:\Users\User\Documents\GitHub\Project_MCP"

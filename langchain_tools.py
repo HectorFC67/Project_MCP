@@ -137,20 +137,143 @@ class BibliotecaPayloadGenerator:
         return content.strip()
 
 class ComprasPayloadGenerator:
-    """Generates API payloads for compras queries (placeholder for future implementation)"""
+    """Generates API payloads for compras queries"""
     
     def __init__(self, llm):
         self.llm = llm
     
     def generate_payload(self, english_question: str) -> str:
         """Generate HTTP request payload for compras API"""
-        # Placeholder implementation
-        return json.dumps({
-            "method": "GET",
-            "path": "/compras/placeholder",
-            "description": "Compras payload generation not yet implemented",
-            "query": english_question
-        })
+        prompt = (
+            "You are a system that reads natural language queries and generates the correct HTTP request payload "
+            "to query a REST API for a purchases/shopping database.\n\n"
+            "IMPORTANT: You will receive queries from AI agents that tend to be verbose. Extract the CORE intent.\n\n"
+            "Common verbose patterns to simplify:\n"
+            "- 'How many purchases has [client] made?' → 'compras cliente [client]'\n"
+            "- 'Show me a list of products' → 'productos'\n"
+            "- 'Products purchased in [year]' → 'productos año [year]'\n"
+            "- 'Top selling products' → 'top productos'\n"
+            "- 'Clients from [country]' → 'clientes país [country]'\n"
+            "- 'Most active client' → 'cliente activo'\n"
+            "- 'Out of stock products' → 'sin stock'\n\n"
+            "You must:\n"
+            "- Focus on the MAIN topic (client name, year, product, country, etc.)\n"
+            "- Ignore verbose descriptors like 'comprehensive', 'detailed', 'complete list'\n"
+            "- Extract the core intent and map to the appropriate query type\n"
+            "- Return a JSON object specifying the method, path (which will be '/provision'), and description\n"
+            "- Include the processed query that will be sent to the MCP server\n"
+            "- If truly ambiguous, return: { \"error\": \"No appropriate query pattern found.\" }\n\n"
+            "### Compras API Specification:\n"
+            "The compras API uses a single endpoint POST /provision that accepts natural language queries.\n"
+            "The MCP server processes these queries and returns relevant data from the purchases database.\n\n"
+            "### Supported Query Patterns:\n"
+            "1. **Purchase count by client**: 'cuántas compras ha hecho [nombre]' → Count purchases by client name\n"
+            "2. **Random products**: 'lista [N] productos' → Show N random products (default 3)\n"
+            "3. **Products by year**: 'productos comprados en [año]' → Products purchased in specific year\n"
+            "4. **Top products**: 'top [N] productos más comprados' → Most purchased products (default 3)\n"
+            "5. **Clients by country**: 'cuántos clientes de [país]' → Number of clients from country\n"
+            "6. **Most active client**: 'cliente más activo' → Client with most purchases\n"
+            "7. **Out of stock**: 'productos sin stock' → Products with no stock\n"
+            "8. **Products by year range**: 'productos entre [año1] y [año2]' → Products purchased between years\n"
+            "9. **General stats**: Any ambiguous query → General database statistics\n\n"
+            "### Intent Extraction Rules:\n"
+            "- If query mentions 'purchases' + client name → cuántas compras ha hecho [nombre]\n"
+            "- If query mentions 'products' or 'list' + number → lista [N] productos\n"
+            "- If query mentions 'products' + specific year → productos comprados en [año]\n"
+            "- If query mentions 'top' or 'most purchased' + products → top productos más comprados\n"
+            "- If query mentions 'clients' + country → cuántos clientes de [país]\n"
+            "- If query mentions 'most active' or 'best client' → cliente más activo\n"
+            "- If query mentions 'stock' or 'inventory' → productos sin stock\n"
+            "- If query mentions year range (between X and Y) → productos entre [año1] y [año2]\n"
+            "- If query is general or ambiguous → estadísticas generales\n\n"
+            "### Country Name Mapping:\n"
+            "- Spanish → España\n"
+            "- French → Francia\n"
+            "- German → Alemania\n"
+            "- Italian → Italia\n"
+            "- American/US → Estados Unidos\n"
+            "- British/UK → Reino Unido\n\n"
+            "### Examples:\n\n"
+            "User: \"How many purchases has Juan made?\"\n"
+            "{\n"
+            "  \"method\": \"POST\",\n"
+            "  \"path\": \"/provision\",\n"
+            "  \"query\": \"cuántas compras ha hecho Juan\",\n"
+            "  \"description\": \"Consultar número de compras realizadas por Juan\"\n"
+            "}\n\n"
+            "User: \"Show me 5 random products\"\n"
+            "{\n"
+            "  \"method\": \"POST\",\n"
+            "  \"path\": \"/provision\",\n"
+            "  \"query\": \"lista 5 productos\",\n"
+            "  \"description\": \"Mostrar 5 productos al azar\"\n"
+            "}\n\n"
+            "User: \"Products purchased in 2023\"\n"
+            "{\n"
+            "  \"method\": \"POST\",\n"
+            "  \"path\": \"/provision\",\n"
+            "  \"query\": \"productos comprados en 2023\",\n"
+            "  \"description\": \"Productos comprados durante el año 2023\"\n"
+            "}\n\n"
+            "User: \"Top 3 most purchased products\"\n"
+            "{\n"
+            "  \"method\": \"POST\",\n"
+            "  \"path\": \"/provision\",\n"
+            "  \"query\": \"top 3 productos más comprados\",\n"
+            "  \"description\": \"Los 3 productos más comprados\"\n"
+            "}\n\n"
+            "User: \"How many clients from Spain?\"\n"
+            "{\n"
+            "  \"method\": \"POST\",\n"
+            "  \"path\": \"/provision\",\n"
+            "  \"query\": \"cuántos clientes de España\",\n"
+            "  \"description\": \"Número de clientes de España\"\n"
+            "}\n\n"
+            "User: \"Who is the most active client?\"\n"
+            "{\n"
+            "  \"method\": \"POST\",\n"
+            "  \"path\": \"/provision\",\n"
+            "  \"query\": \"cliente más activo\",\n"
+            "  \"description\": \"Cliente con más compras realizadas\"\n"
+            "}\n\n"
+            "User: \"Products that are out of stock\"\n"
+            "{\n"
+            "  \"method\": \"POST\",\n"
+            "  \"path\": \"/provision\",\n"
+            "  \"query\": \"productos sin stock\",\n"
+            "  \"description\": \"Productos que no tienen stock disponible\"\n"
+            "}\n\n"
+            "User: \"Products purchased between 2020 and 2022\"\n"
+            "{\n"
+            "  \"method\": \"POST\",\n"
+            "  \"path\": \"/provision\",\n"
+            "  \"query\": \"productos entre 2020 y 2022\",\n"
+            "  \"description\": \"Productos comprados entre los años 2020 y 2022\"\n"
+            "}\n\n"
+            f"Now analyze this query and extract the core intent:\n"
+            f"Query: \"{english_question}\"\n\n"
+            "Return ONLY the JSON object for the appropriate query. Do not wrap in markdown code blocks."
+        )
+        
+        # Get response from LLM
+        response = self.llm.invoke(prompt)
+        
+        # Extract content from LangChain response object
+        if hasattr(response, 'content'):
+            content = response.content
+        else:
+            content = str(response)
+        
+        # Clean up markdown formatting if present
+        content = content.strip()
+        if content.startswith('```json'):
+            content = content[7:]  # Remove ```json
+        if content.startswith('```'):
+            content = content[3:]   # Remove ```
+        if content.endswith('```'):
+            content = content[:-3]  # Remove trailing ```
+        
+        return content.strip()
 
 class ToolSelector:
     """Intelligent tool selection based on user queries"""
@@ -230,21 +353,50 @@ def create_enhanced_compras_tool(llm):
     
     @tool
     def enhanced_compras_tool(query: str) -> str:
-        """Enhanced compras tool with intelligent payload generation."""
+        """Enhanced compras tool with intelligent payload generation and API calls.
+        
+        IMPORTANT: This tool searches a specific purchases database. If you get results, those are ALL the available results.
+        Do NOT call this tool multiple times with similar queries expecting different results.
+        The database may have limited entries, so accept the results you get as complete."""
         try:
             # Generate payload
             payload_json = payload_generator.generate_payload(query)
+            print(f"🔍 DEBUG - Query: {query}")
+            print(f"🔍 DEBUG - Generated Payload: {payload_json}")
             
-            # For now, fallback to original MCP call
-            response = requests.post(COMPRAS_URL, json={"query": query})
-            response.raise_for_status()
-            chunks = response.json().get("chunks", [])
-            result = "\n".join(c.get("text", "") for c in chunks)
-            
-            return f"📦 Generated Payload: {payload_json}\n📄 Result: {result}"
-            
+            # Try to parse the payload
+            try:
+                payload = json.loads(payload_json)
+                if "error" in payload:
+                    return f"❌ {payload['error']}"
+                
+                # Extract the processed query from the payload
+                processed_query = payload.get("query", query)
+                print(f"🔍 DEBUG - Processed Query: {processed_query}")
+                
+                # Make MCP call using the processed query
+                response = requests.post(COMPRAS_URL, json={"query": processed_query}, timeout=5)
+                
+                if response.status_code == 200:
+                    result_data = response.json()
+                    chunks = result_data.get("chunks", [])
+                    result = "\n".join(c.get("text", "") for c in chunks)
+                    
+                    return f"✅ Query: {query}\n📦 Payload: {payload_json}\n📄 Result: {result}"
+                else:
+                    return f"❌ MCP Error: {response.status_code} - {response.text}\n🔍 URL attempted: {COMPRAS_URL}\n📦 Payload: {payload_json}"
+                    
+            except json.JSONDecodeError as e:
+                print(f"🔍 DEBUG - JSON Decode Error: {e}")
+                print(f"🔍 DEBUG - Raw payload: {payload_json}")
+                # Fallback to original MCP call with original query
+                response = requests.post(COMPRAS_URL, json={"query": query})
+                response.raise_for_status()
+                chunks = response.json().get("chunks", [])
+                return "\n".join(c.get("text", "") for c in chunks)
+                
         except Exception as e:
-            return f"❌ Error: {str(e)}"
+            return f"❌ Error: {str(e)}\n🔍 Query was: {query}"
     
     return enhanced_compras_tool
 

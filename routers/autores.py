@@ -10,7 +10,9 @@ autores_db = [
     {"id": 2, "nombre": "Isabel Allende", "nacionalidad": "Chile"},
     {"id": 3, "nombre": "Mario Vargas Llosa", "nacionalidad": "Peru"},
     {"id": 4, "nombre": "Jorge Luis Borges", "nacionalidad": "Argentina"},
-    {"id": 5, "nombre": "Pablo Neruda", "nacionalidad": "Chile"}
+    {"id": 5, "nombre": "Pablo Neruda", "nacionalidad": "Chile"},
+    {"id": 6, "nombre": "Federico García Lorca", "nacionalidad": "España"},
+    {"id": 7, "nombre": "Juan Ramón Giménez", "nacionalidad": "España"}
 ]
 
 @router.get("/", response_model=List[dict], summary="Obtener todos los autores")
