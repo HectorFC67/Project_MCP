@@ -1,11 +1,12 @@
 En el primer cmd:
 python run_server.py
 
-En el tercer cmd (API):
+En el segundo cmd (API):
 uvicorn mcp_biblioteca:app --port 8100 --reload
 
-En el cuarto cmd (BBDD):
+En el tercer cmd (BBDD):
 uvicorn mcp_compras:app --port 8200 --reload
 
-En el ultimo cmd:
+En el ultimo POWERSHELL:
+$env:OPENROUTER_API_KEY="sk-or-v1-CADA_PERSONA_TIENE_SU_API_KEY_CREADA"
 python tinyllama_intelligent.py
